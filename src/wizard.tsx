@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { render, Text, Box } from "ink";
 import SelectInput from "ink-select-input";
 import chalk from "chalk";
-import fs from "fs";
 import { PRESETS } from "./presets.js";
 import { loadConfig, loadEnv, setEnvVar, writeExample, writeTypes, scanForEnvKeys } from "./index.js";
 
@@ -21,9 +20,12 @@ function App() {
     { label: "Exit", value: "done" },
   ];
 
-  const onSelect = (item:any) => setScreen(item.value);
+  const onSelect = (item: any) => {
+    if (item.value === "exit") process.exit(0);
+    setScreen(item.value);
+  };
 
-  if (screen === "home") {
+  if (screen==="home") {
     return (
       <Box flexDirection="column">
         <Text>
@@ -82,17 +84,24 @@ function App() {
   }
 
   if (screen === "generate") {
-    const cfg = loadConfig();
-    scanForEnvKeys(cfg).then(res=>{
-      writeTypes(res.keys);
-      writeExample(loadEnv(), ".env.example");
-      setLog(l=>[...l, chalk.green("Generated .loadenv/env.d.ts and .env.example")]);
-      setScreen("home");
-    });
-    return <Text>Generating…</Text>;
+    useEffect(() => {
+      (async () => {
+        const cfg = await loadConfig();
+        const res = await scanForEnvKeys(cfg);
+        writeTypes(res.keys);
+        writeExample(loadEnv(), ".env.example");
+        setLog(l => [...l, chalk.green(`Generated types and example file.`)]);
+        setScreen("home");
+      })();
+    }, []);
+    return <Text>Generating...</Text>;
   }
 
-  return <Text>Bye!</Text>;
+  if (screen==="done") {
+    return <Text>Bye!</Text>;
+  }
+
+  return null;
 }
 
 render(<App />);

@@ -151,40 +151,20 @@ function writeReport(keys: Set<string>, files: string[]) {
 
 program
   .command("init")
-  .description("Interactive setup: create config, optional schema, example, and types")
+  .description("Create default config, schema, and generate example/types (non-interactive)")
   .action(async () => {
-    const prompts = await import("prompts");
-    const answers = await prompts.default([
-      { type: "list", name: "scanDirs", message: "Scan directories (comma separated)", initial: "src,app,server,scripts" },
-      { type: "list", name: "ignore", message: "Ignore globs (comma separated)", initial: "**/node_modules/**,**/.next/**,**/.loadenv/**" },
-      { type: "text", name: "envFile", message: "Default env file", initial: ".env" },
-      { type: "confirm", name: "writeSchema", message: "Create a Zod schema file (envranger.schema.mjs)?", initial: true },
-    ]);
-
-    const cfg = `/** @type {import('envranger').Config} */
-export default {
-  scanDirs: ${JSON.stringify((answers.scanDirs||[]).map((s:string)=>s.trim()).filter(Boolean))},
-  ignore: ${JSON.stringify((answers.ignore||[]).map((s:string)=>s.trim()).filter(Boolean))},
-  required: [],
-  optional: [],
-  deprecated: [],
-  envFile: ${JSON.stringify(answers.envFile || ".env")}
-}
-`;
+    const cfgObj = {
+      scanDirs: ["src", "app", "server", "scripts"],
+      ignore: ["**/node_modules/**", "**/.next/**", "**/.loadenv/**"],
+      required: [], optional: [], deprecated: [], envFile: ".env"
+    };
+    const cfg = `/** @type {import('envranger').Config} */\nexport default ${JSON.stringify(cfgObj, null, 2)}\n`;
     fs.writeFileSync("envranger.config.mjs", cfg, "utf8");
 
-    if (answers.writeSchema) {
-      const schema = `import { z } from "zod";
-export default z.object({
-  // Add specific validation rules:
-  // DATABASE_URL: z.string().url(),
-  // NEXT_PUBLIC_APP_URL: z.string().url(),
-}).catchall(z.string());
-`;
-      fs.writeFileSync("envranger.schema.mjs", schema, "utf8");
-    }
+    const schema = `import { z } from "zod";\nexport default z.object({\n  // Add specific validation rules:\n  // DATABASE_URL: z.string().url(),\n  // NEXT_PUBLIC_APP_URL: z.string().url(),\n}).catchall(z.string());\n`;
+    fs.writeFileSync("envranger.schema.mjs", schema, "utf8");
 
-    console.log(chalk.green("Wrote envranger.config.mjs",));
+    console.log(chalk.green("Wrote envranger.config.mjs"));
     console.log(chalk.green("Wrote envranger.schema.mjs (editable)"));
     await program.parseAsync(["", "", "scan"]);
     await program.parseAsync(["", "", "types"]);
@@ -250,7 +230,7 @@ program
   .option("--strict", "exit non-zero on problems", false)
   .option("--report", "write .loadenv/report.md and report.json", true)
   .action(async (opts) => {
-    const cfg = loadConfig();
+    const cfg = await loadConfig();
     const res = await scanForEnvKeys(cfg);
     const env = loadEnv(opts.env);
     const diff = diffKeys(res.keys, env, cfg);
@@ -271,7 +251,7 @@ program
   .option("--env <path>", "env file", ".env")
   .option("--json", "also emit .loadenv/report.json", true)
   .action(async (opts) => {
-    const cfg = loadConfig();
+    const cfg = await loadConfig();
     const res = await scanForEnvKeys(cfg);
     const env = loadEnv(opts.env);
     const diff = diffKeys(res.keys, env, cfg);
@@ -346,7 +326,7 @@ if (target === "node") {
   pkg2.scripts["env:doctor"] = "envranger doctor --strict";
   fs.writeFileSync(pkgPath2, JSON.stringify(pkg2, null, 2));
   fs.mkdirSync(".husky", { recursive: true });
-  fs.writeFileSync(".husky/pre-commit", "#!/bin/sh\n. \"$(dirname \"$0\")/_/husky.sh\"\nnpx lint-staged\n", 0o755);
+  fs.writeFileSync(".husky/pre-commit", "#!/bin/sh\n. \"$(dirname \"$0\")/_/husky.sh\"\nnpx lint-staged\n", { mode: 0o755 });
   fs.writeFileSync(".lintstagedrc.json", JSON.stringify({
     "*.{ts,tsx,js,jsx}": ["eslint --fix"],
     ".env*": ["envranger check --report", "envranger types"]
