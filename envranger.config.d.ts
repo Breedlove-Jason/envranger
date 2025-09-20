@@ -1,0 +1,1 @@
+export type Config = import('./dist/index.js').Config;

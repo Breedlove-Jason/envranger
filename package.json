@@ -1,0 +1,45 @@
+{
+  "name": "envranger",
+  "version": "0.1.0",
+  "description": "Scan, validate, and manage .env files with style",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "envranger": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "wizard": "node dist/wizard.js"
+  },
+  "dependencies": {
+    "@dotenvx/dotenvx": "^1.0.0",
+    "boxen": "^7.1.1",
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "fast-glob": "^3.3.2",
+    "ink": "^5.0.1",
+    "ink-select-input": "^6.2.0",
+    "ora": "^7.0.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "typescript": "^5.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "env",
+    "environment",
+    "dotenv",
+    "cli",
+    "validation"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+

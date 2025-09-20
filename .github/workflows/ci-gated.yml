@@ -1,0 +1,22 @@
+
+name: Envranger CI (Gated)
+on:
+  workflow_dispatch:
+jobs:
+  doctor-gated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+      - run: node dist/cli.js doctor --report --strict
+      - name: Attach Report
+        if: always()
+        run: |
+          if [ -f .loadenv/report.md ]; then
+            echo "### Envranger Report" >> $GITHUB_STEP_SUMMARY
+            cat .loadenv/report.md >> $GITHUB_STEP_SUMMARY
+          fi

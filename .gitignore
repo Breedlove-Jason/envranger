@@ -1,0 +1,9 @@
+node_modules/*
+dist
+.env
+.env.*
+.loadenv
+.DS_Store
+*.iml
+*.xml
+/node_modules
