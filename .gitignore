@@ -1,9 +1,8 @@
-node_modules/*
-dist
+node_modules/
+dist/
+*.tgz
 .env
 .env.*
-.loadenv
+!.env.example
+.envranger/
 .DS_Store
-*.iml
-*.xml
-/node_modules

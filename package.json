@@ -1,7 +1,7 @@
 {
   "name": "envranger",
-  "version": "0.1.0",
-  "description": "Scan, validate, and manage .env files with style",
+  "version": "0.2.0",
+  "description": "Local-first environment file management for Node.js projects",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -9,28 +9,21 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test test/*.test.mjs",
     "dev": "tsc --watch",
-    "start": "node dist/cli.js",
-    "wizard": "node dist/wizard.js"
+    "prepack": "npm run build",
+    "prepare": "npm run build"
   },
   "dependencies": {
-    "@dotenvx/dotenvx": "^1.0.0",
-    "boxen": "^7.1.1",
-    "chalk": "^5.3.0",
     "commander": "^11.1.0",
     "fast-glob": "^3.3.2",
-    "ink": "^5.0.1",
-    "ink-select-input": "^6.2.0",
-    "ora": "^8.2.0",
-    "react": "^18.2.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.3.24",
     "typescript": "^5.2.0"
   },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22"
   },
   "keywords": [
     "env",
@@ -39,6 +32,27 @@
     "cli",
     "validation"
   ],
-  "author": "",
-  "license": "MIT"
+  "author": "Jason Breedlove",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs/guide.md"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Breedlove-Jason/envranger.git"
+  },
+  "homepage": "https://github.com/Breedlove-Jason/envranger#readme",
+  "bugs": {
+    "url": "https://github.com/Breedlove-Jason/envranger/issues"
+  }
 }
