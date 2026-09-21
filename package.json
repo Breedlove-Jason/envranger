@@ -8,7 +8,7 @@
     "envranger": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "test": "npm run build && node --test test/*.test.mjs",
     "dev": "tsc --watch",
     "prepack": "npm run build",
@@ -38,7 +38,8 @@
     "dist",
     "README.md",
     "LICENSE",
-    "docs/guide.md"
+    "docs/guide.md",
+    "docs/banner.svg"
   ],
   "types": "./dist/index.d.ts",
   "exports": {
