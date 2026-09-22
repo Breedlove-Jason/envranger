@@ -1,0 +1,18 @@
+{
+  "envFile": ".env",
+  "scanDirs": ["frontend", "backend", "src"],
+  "ignore": ["**/test/**", "**/tests/**"],
+  "required": ["PORT", "MONGODB_URI", "NODE_ENV"],
+  "optional": [],
+  "deprecated": [],
+  "profiles": {"development": [".env"]},
+  "access": {
+    "frontend": ["MAPBOX_TOKEN"],
+    "backend": ["PORT", "MONGODB_URI", "NODE_ENV", "CLOUDINARY_API_SECRET", "CLOUDINARY_API_KEY", "CLOUDINARY_CLOUD_NAME", "UNSPLASH_ACCESS_KEY", "MAPBOX_TOKEN", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+    "root": false
+  },
+  "routes": {
+    "backend/.env": ["PORT", "MONGODB_URI", "NODE_ENV", "CLOUDINARY_API_SECRET", "CLOUDINARY_API_KEY", "CLOUDINARY_CLOUD_NAME", "UNSPLASH_ACCESS_KEY", "MAPBOX_TOKEN", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+    "frontend/.env.local": ["MAPBOX_TOKEN"]
+  }
+}

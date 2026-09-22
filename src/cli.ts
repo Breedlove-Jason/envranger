@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Command } from 'commander';
-import { loadConfig, scan, check, loadFiles, routePlan, applyPlan, readDocument, values, update, writeFile, safePath, assertKey, encode, duplicates } from './index.js';
-const program = new Command().enablePositionalOptions().name('envranger').description('Know your variables. Put them in their place.').version('0.2.0')
+import { loadConfig, scan, check, loadFiles, routePlan, applyPlan, readDocument, values, update, writeFile, safePath, assertKey, encode, duplicates, encryptFile, encryptedEdit, publicMetadata, isMetadata } from './index.js';
+const program = new Command().enablePositionalOptions().name('envranger').description('Know your variables. Put them in their place.').version('0.3.0')
   .option('--cwd <directory>', 'Project root', '.');
 const root = () => path.resolve(program.opts().cwd);
 function config() { return loadConfig(root()); }
@@ -17,7 +17,7 @@ function files(opts: any): string[] {
   }
   return [opts.env ?? cfg.envFile];
 }
-function input(command: Command): Command { return command.option('--env <file>', 'Input file (defaults to config envFile or .env)').option('--profile <name>', 'Load a configured profile; later files win'); }
+function input(command: Command): Command { return command.option('--env <file>', 'Input file (defaults to config envFile or .env)').option('--profile <name>', 'Load a configured profile; later files win').option('--keys-file <file>', 'Explicit private key file inside the project'); }
 function edit(command: Command): Command { return command.option('--env <file>', 'Target file (defaults to config envFile or .env)').option('--write', 'Apply changes; default is a preview'); }
 function output(value: unknown) { console.log(JSON.stringify(value,null,2)); }
 function writeOrPreview(file: string, text: string, opts: any, keys: string[]) {
@@ -51,7 +51,7 @@ for (const name of ['check','doctor']) input(program.command(name).description('
   .option('--strict','Compatibility flag; checks always fail when invalid')
   .option('--report','Write a keys-only JSON report to .envranger/report.json')
   .action(async opts => {
-    const cfg = config(); const found = await scan(cfg,root()); const {env,sources}=loadFiles(root(),files(opts));
+    const cfg = config(); const found = await scan(cfg,root()); const {env,sources}=loadFiles(root(),files(opts),{keysFile:opts.keysFile});
     const result = check(found.keys,env,cfg);
     const ok = !result.missing.length && !result.empty.length && !result.deprecated.length;
     const report = {ok,...result,sources};
@@ -60,12 +60,12 @@ for (const name of ['check','doctor']) input(program.command(name).description('
     if (!ok) process.exitCode=1;
   });
 input(program.command('list').description('List keys, masked state and source files')).action(opts => {
-  const {env,sources}=loadFiles(root(),files(opts));
+  const {env,sources}=loadFiles(root(),files(opts),{keysFile:opts.keysFile});
   output(Object.keys(env).sort().map(key=>({key,value:env[key] ? '[REDACTED]' : '[EMPTY]',source:sources[key]})));
 });
 input(program.command('get').description('Inspect a key; values stay masked unless --reveal is supplied').argument('<key>'))
   .option('--reveal','Print the raw value explicitly').action((key,opts)=>{
-    assertKey(key); const {env}=loadFiles(root(),files(opts));
+    assertKey(key); const {env}=loadFiles(root(),files(opts),{keysFile:opts.keysFile});
     if (!(key in env)) throw new Error(`Key not found: ${key}`);
     console.log(opts.reveal ? env[key] : env[key] ? '[REDACTED]' : '[EMPTY]');
   });
@@ -75,16 +75,16 @@ edit(program.command('set').description('Set a literal value; prefer --stdin for
     if (opts.stdin && value !== undefined) throw new Error('Supply a value or --stdin, not both.');
     const val = opts.stdin ? fs.readFileSync(0,'utf8') : value;
     if (val === undefined) throw new Error('Supply a value (use an empty string for blank values) or --stdin.');
-    const file=files(opts)[0]; writeOrPreview(file,update(readDocument(safePath(root(),file),true),key,val),opts,[key]);
+    const file=files(opts)[0]; writeOrPreview(file,encryptedEdit(readDocument(safePath(root(),file),true),key,val),opts,[key]);
   });
 edit(program.command('unset').description('Remove one key; preserves unrelated entries').argument('<key>')).action((key,opts)=>{
-  const file=files(opts)[0];writeOrPreview(file,update(readDocument(safePath(root(),file)),key),opts,[key]);
+  const file=files(opts)[0];writeOrPreview(file,encryptedEdit(readDocument(safePath(root(),file)),key),opts,[key]);
 });
 input(program.command('example').description('Sync blank placeholders from source and input file; never copy values'))
   .option('--out <file>','Destination (must end in .example)', '.env.example').option('--write','Apply changes')
   .action(async opts=>{
     if (!opts.out.endsWith('.example')) throw new Error('Example output must end in .example.');
-    const cfg = config(); const found=await scan(cfg,root()); const {env}=loadFiles(root(),files(opts));
+    const cfg = config(); const found=await scan(cfg,root()); const {env}=loadFiles(root(),files(opts),{keysFile:opts.keysFile});
     const keys=[...new Set([...found.keys,...Object.keys(env),...cfg.required,...cfg.optional])].sort();
     writeOrPreview(opts.out,'# Environment contract. Copy locally and fill in your values.\n'+keys.map(k=>`${k}=`).join('\n')+'\n',opts,keys);
   });
@@ -95,8 +95,8 @@ program.command('types').description('Generate optional NodeJS.ProcessEnv declar
     writeOrPreview(opts.out,'export {};\ndeclare global {\n  namespace NodeJS {\n    interface ProcessEnv {\n'+all.map(k=>`      ${JSON.stringify(k)}?: string;`).join('\n')+'\n    }\n  }\n}\n',opts,all);
   });
 input(program.command('route').description('Copy explicitly mapped keys into destination files; source is preserved'))
-  .option('--overwrite','Allow replacing conflicting destination values').option('--write','Apply the routing plan').action(opts=>{
-    const cfg=config();const {env}=loadFiles(root(),files(opts));const plan=routePlan(root(),cfg,env,!!opts.overwrite);
+  .option('--overwrite','Allow replacing conflicting destination values').option('--plaintext','Explicitly allow decrypted output in unencrypted destination files').option('--write','Apply the routing plan').action(opts=>{
+    const cfg=config();const {env}=loadFiles(root(),files(opts),{keysFile:opts.keysFile});const plan=routePlan(root(),cfg,env,!!opts.overwrite,{keysFile:opts.keysFile,allowPlaintext:!!opts.plaintext,encryptedSource:files(opts).some(file=>!!publicMetadata(readDocument(safePath(root(),file))))});
     if(opts.write) applyPlan(root(),plan);
     output({action:opts.write?'written':'preview',destinations:plan.map(({file,keys})=>({file,keys}))});
   });
@@ -106,9 +106,11 @@ program.command('diff').description('Compare keys and changed values without dis
   output({onlyLeft:Object.keys(a).filter(k=>!(k in b)).sort(),onlyRight:Object.keys(b).filter(k=>!(k in a)).sort(),changed:Object.keys(a).filter(k=>k in b && a[k]!==b[k]).sort()});
 });
 program.command('merge').description('Combine files, later sources win; existing output requires --overwrite').argument('<dest>').argument('<files...>')
-  .option('--overwrite','Allow replacing an existing destination').option('--write','Apply changes').action((dest,sources,opts)=>{
+  .option('--overwrite','Allow replacing an existing destination').option('--plaintext','Allow decrypted input to be written as plaintext').option('--keys-file <file>','Private key file').option('--write','Apply changes').action((dest,sources,opts)=>{
     if(fs.existsSync(safePath(root(),dest))&&!opts.overwrite) throw new Error('Destination exists. Use --overwrite to replace it.');
-    const {env}=loadFiles(root(),sources);const keys=Object.keys(env).sort();
+    if (fs.existsSync(safePath(root(),dest)) && publicMetadata(readDocument(safePath(root(),dest)))) throw new Error('Use route to update encrypted destinations without changing their public key.');
+    if (!opts.plaintext && sources.some((f:string)=>publicMetadata(readDocument(safePath(root(),f))))) throw new Error('Merging decrypted values requires --plaintext.');
+    const {env}=loadFiles(root(),sources,{keysFile:opts.keysFile});const keys=Object.keys(env).sort();
     writeOrPreview(dest,keys.map(k=>`${k}=${encode(env[k])}`).join('\n')+'\n',opts,keys);
   });
 input(program.command('lint').description('Check syntax and duplicate keys without modifying values')).action(opts=>{
@@ -118,11 +120,21 @@ input(program.command('lint').description('Check syntax and duplicate keys witho
 input(program.command('run').description('Run a program with a profile; inherited process values win by default').argument('<command>').argument('[args...]'))
   .option('--override','Let file values replace inherited process values').allowUnknownOption().passThroughOptions()
   .action((command,args,opts)=>{
-    const {env}=loadFiles(root(),files(opts));
-    const child=spawnSync(command,args,{cwd:root(),stdio:'inherit',shell:false,env:opts.override?{...process.env,...env}:{...env,...process.env}});
+    const {env}=loadFiles(root(),files(opts),{keysFile:opts.keysFile});
+    const inherited=Object.fromEntries(Object.entries(process.env).filter(([key])=>!isMetadata(key)));
+    const child=spawnSync(command,args,{cwd:root(),stdio:'inherit',shell:false,env:opts.override?{...inherited,...env}:{...env,...inherited}});
     if(child.error)throw new Error('Could not start the requested executable. Check its path.');
     process.exitCode=child.status??1;
   });
+input(program.command('encrypt').description('Encrypt a file with dotenvx; preserve its public key and keep the private key separate'))
+  .option('--public-key <hex>', 'Use an existing recipient public key; never generate or request their private key')
+  .option('--write','Apply encryption').action(opts=>{
+    if(opts.profile) throw new Error('Encrypt one --env file at a time.');
+    output(encryptFile(root(),files(opts)[0],{keysFile:opts.keysFile,publicKey:opts.publicKey,write:!!opts.write}));
+  });
+input(program.command('keys').description('Inspect saved public keys only; never print private keys')).action(opts=>{
+  output(files(opts).map(file=>({file,publicKey:publicMetadata(readDocument(safePath(root(),file)))})));
+});
 // Register all commands before parsing. Errors never include file contents or raw values.
 program.parseAsync().catch(error=>{
   const message = error?.code ? `File operation failed (${error.code}); check paths and permissions.` : error.message;

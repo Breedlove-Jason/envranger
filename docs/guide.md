@@ -125,7 +125,7 @@ All destinations are parsed and checked before writing. Missing source keys, dup
 
 Changed existing files are copied to `.envranger/backups/` with a timestamp, unique ID and original basename. Review the CLI's destination paths to identify which file you changed. To restore a backup, copy its contents to the original destination using your file manager or editor, then rerun `lint` and `check`.
 
-Backup directories request mode `0700`; backups and replacement files request mode `0600` on POSIX. Windows uses its own ACL behavior. These are plaintext backups, not encryption. Do not commit or upload them; clean them up after confirming the changes. Existing permissions on parent directories are not changed.
+Backup directories request mode `0700`; backups and replacement files request mode `0600` on POSIX. Windows uses its own ACL behavior. Backups preserve the original bytes: plaintext files produce plaintext backups; encrypted files produce ciphertext backups. The encrypt command creates no new plaintext backup. Do not commit or upload them; clean them up after confirming the changes. Existing permissions on parent directories are not changed.
 
 Individual files use a temporary sibling file and atomic rename. A route spanning multiple files is **not transactional**: a disk or permission failure during writing can leave earlier destinations updated. Backups provide recovery. There is no concurrent-writer lock; use one envRanger process per project at a time.
 
@@ -170,4 +170,99 @@ Version 0.2 replaces unfinished experimental behavior with a smaller supported i
 | React Ink wizard, presets, automatic integration hooks, rename, schema and vault wrappers | Removed from the supported CLI; configure JSON routes/profiles and use your framework or secret manager directly |
 | Compatibility loader and old API exports | Import the typed 0.2 ESM API; review signatures before upgrading |
 
-The removed features are retained in Git history. There is no implicit dependency installation, shell-based vault fallback, hook overwrite or executable schema loading. npm registry publication, encrypted secret storage and cloud provider synchronization are outside this release.
+The removed features are retained in Git history. There is no implicit dependency installation, shell-based vault fallback, hook overwrite or executable schema loading. npm registry publication and cloud provider synchronization remain outside this release. Version 0.3 adds dotenvx encryption and a scoped loader as described below.
+
+## Dotenvx encryption and the shared loader
+
+Version 0.3 uses the [official dotenvx primitives](https://dotenvx.com/docs/sdk/nodejs/primitives/) for encryption, key generation and decryption. It also ships a pinned `@dotenvx/dotenvx` dependency and tests that its SDK can read envRanger's encrypted output. This is the current `DOTENV_PUBLIC_KEY` / `DOTENV_PRIVATE_KEY` format, not the legacy `.env.vault` / `DOTENV_KEY` scheme.
+
+### Encrypt and retain the public key
+
+```bash
+envranger encrypt --env .env
+envranger encrypt --env .env --write
+envranger keys --env .env
+envranger list --env .env
+envranger check --env .env
+```
+
+`encrypt` previews by default. On `--write`, application values become ciphertext and the file keeps its public key. Generated private keys are written separately to `.env.keys` beside the selected `.env` file; custom `--keys-file secure/keys` paths are supported inside the project. The private key file is written before replacing the environment file, and an exact ignore entry is added first. Encryption does not leave a new plaintext backup behind. Any plaintext backups from earlier edits still exist and should be reviewed separately.
+
+Existing public keys are preserved. Existing matching named local private keys can be reused when adding public metadata. A supplied public key that conflicts with the file's saved key is rejected. This command does not rotate keys or revoke a recipient.
+
+Key names follow the environment: `.env` uses `DOTENV_PRIVATE_KEY`, `.env.production` uses `DOTENV_PRIVATE_KEY_PRODUCTION`, and `.env.local` uses `DOTENV_PRIVATE_KEY_LOCAL`. An existing public metadata name takes precedence. Generated filenames must be `.env` or `.env.<environment>`; examples and private key files cannot be encrypted by this command.
+
+During reads, the matching key in the process environment takes precedence over the selected private key file. An explicitly supplied wrong key fails rather than silently falling back. The loader also accepts a `privateKeys` object for callers integrating a trusted secret provider. Missing keys, mismatches, duplicate entries and corrupt ciphertext throw redacted errors. Values are decrypted in memory; loading never writes plaintext back to disk. Public and private key metadata are excluded from application results and examples.
+
+Environment values remain literal. Unlike a general dotenvx runtime configuration call, envRanger does not evaluate `$(commands)`, `${references}`, 1Password/Bitwarden references or cloud custody. This avoids executing code merely because an environment file was loaded. The pinned cryptographic primitives supply the dotenvx ciphertext interoperability.
+
+### Keep edits and routes encrypted
+
+`set` automatically encrypts a new value with the destination's saved public key. It can do this without possessing the private key. `unset` removes an application key while preserving encryption metadata. Neither command lets you overwrite key metadata as an ordinary variable.
+
+`route` decrypts its source in memory. If a destination has a public key, routed values are re-encrypted for that key. Existing destination values require its private key for conflict comparison; `--overwrite` can deliberately replace mapped values using only the recipient public key. Unknown/unmapped destination entries remain untouched.
+
+If the source is encrypted and a destination is plaintext, routing refuses unless you explicitly pass `--plaintext`. This flag does not make a secret safe for frontend use. Keep the route allowlist restricted to values you intentionally permit to be public. `merge` likewise requires `--plaintext` for encrypted sources and refuses to flatten an existing encrypted destination; use `route` for that.
+
+`run` decrypts before starting the child and removes dotenv key metadata from the child's inherited environment. It passes application values, not decryption keys. If your child independently uses a loader, supply its keys through a separate trusted mechanism or let it use its local key file.
+
+### Replace your root loadEnv.js
+
+Copy [`examples/loadEnv.js`](../examples/loadEnv.js) to the **project root**, and adapt [`examples/envranger.config.json`](../examples/envranger.config.json) there. Install envRanger from this GitHub repository first. Your application needs ESM (`"type": "module"` in package.json, or rename the wrapper to `.mjs`). The root is anchored to the wrapper's location, so imports from nested frontend/backend directories do not depend on the current working directory.
+
+The wrapper retains the uploaded file's backend requirements: PORT, MONGODB_URI, NODE_ENV, CLOUDINARY_API_SECRET, CLOUDINARY_API_KEY, CLOUDINARY_CLOUD_NAME, UNSPLASH_ACCESS_KEY, MAPBOX_TOKEN, UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN. Override `required` when your app intentionally uses fewer services.
+
+```js
+// backend/server.js — Node.js only
+import loadEnv from '../loadEnv.js';
+const env = loadEnv();
+// The wrapper populates the allowlisted backend keys for legacy process.env consumers.
+// It throws on failure; your application decides how to handle startup errors.
+```
+
+Core `loadEnv` from `envranger/loader` does not populate process.env by default; only the compatibility wrapper opts in for backend calls. `override: true` lets loaded values replace existing selected process values. Otherwise existing selected process values win. Unrelated process variables are never returned. Failed validation performs no partial injection. There is no global cache: each call rereads files and returns a frozen, newly scoped object.
+
+```js
+// Node-side build configuration — never browser application code
+import loadEnv from './loadEnv.js';
+const publicConfig = loadEnv({ scope: 'frontend' });
+// Deliberately pass publicConfig into your framework's build configuration.
+// Never serialize a backend or root result into browser code.
+```
+
+`access.frontend` and `access.backend` are exact key lists; no prefix is trusted automatically. The example frontend list contains MAPBOX_TOKEN as a demonstration: include it **only if it is a publishable, restricted public Mapbox token**. Remove it or substitute your own public names otherwise. Backend Cloudinary secrets, MongoDB credentials and Redis tokens do not belong in that list. Frameworks may require their own public prefixes or explicit build mapping; this loader does not silently rename keys.
+
+Root access requires both controls:
+
+```json
+{ "access": { "frontend": [], "backend": ["PORT"], "root": true } }
+```
+
+```js
+const allApplicationValues = loadEnv({ scope: 'root', allowRoot: true });
+```
+
+If your configuration already lives in separate frontend/backend files, combine them through an explicit profile. Later files win:
+
+```json
+{ "profiles": { "complete": ["frontend/.env.local", "backend/.env"] } }
+```
+
+```js
+const complete = loadEnv({ scope: 'root', allowRoot: true, profile: 'complete' });
+```
+
+The loader reads each encrypted file using its matching key. It does not search parent directories or collect arbitrary `.env` files implicitly. Use `files` instead of `profile` when a trusted caller supplies an explicit list.
+
+Both opt-ins are deliberate safeguards for trusted Node-side callers, **not an identity or permissions system**. A person or process with read access to the root private key can decrypt all root ciphertext regardless of the selected scope. Do not accept the scope, allowRoot, file paths or key material from an untrusted HTTP request. Do not expose this loader as a public endpoint.
+
+### Give a person scoped access
+
+Use separate ciphertext files and key pairs for different trust groups. The recipient supplies their dotenvx public key; keep it in that destination's encrypted file. You do not need their private key to send updated values.
+
+1. Create a local destination `.env` file containing only the values that person may receive, or create an empty destination for subsequent routing.
+2. Encrypt it using `envranger encrypt --env recipient/.env --public-key <recipient-public-key> --write`.
+3. Share the resulting encrypted file. The recipient retains their own private key and provides it through their trusted environment or private key store.
+4. To grant complete root access, distribute the root private key only through your existing password manager/secret manager to authorized people. envRanger never prints or sends it for you.
+
+Removing someone from a config list does not revoke a private key they already know. Revocation requires rotating the affected secrets and encryption keys and considering previously shared files and Git history. Keep `.env.keys`, secret provider exports and old plaintext backups out of commits. Local scopes cannot replace OS file permissions, deployment access controls or user authentication.

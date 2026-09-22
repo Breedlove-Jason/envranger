@@ -70,14 +70,16 @@ export function update(entries: Entry[], key: string, value?: string): string {
   return !found && value !== undefined ? next + (next && !next.endsWith('\n') ? newline : '') + `${key}=${encode(value)}${newline}` : next;
 }
 /** Existing files are backed up privately; individual file replacements are atomic. */
-export function writeFile(file: string, text: string, root = process.cwd()): void {
+export function writeFile(file: string, text: string, root = process.cwd(), backup = true): void {
   const abs = safePath(root, file);
   fs.mkdirSync(path.dirname(abs), {recursive:true});
   if (fs.existsSync(abs)) {
     if (fs.readFileSync(abs, 'utf8') === text) return;
-    const backupDir = safePath(root, '.envranger/backups');
-    fs.mkdirSync(backupDir, {recursive:true, mode:0o700});
-    fs.writeFileSync(path.join(backupDir, `${Date.now()}-${randomUUID()}-${path.basename(abs)}`), fs.readFileSync(abs), {mode:0o600, flag:'wx'});
+    if (backup) {
+      const backupDir = safePath(root, '.envranger/backups');
+      fs.mkdirSync(backupDir, {recursive:true, mode:0o700});
+      fs.writeFileSync(path.join(backupDir, `${Date.now()}-${randomUUID()}-${path.basename(abs)}`), fs.readFileSync(abs), {mode:0o600, flag:'wx'});
+    }
   }
   const temp = `${abs}.${randomUUID()}.tmp`;
   try { fs.writeFileSync(temp, text, {mode:0o600, flag:'wx'}); fs.renameSync(temp, abs); }

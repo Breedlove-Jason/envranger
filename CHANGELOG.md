@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — 2026-09-22
+
+- Add pinned dotenvx dependencies and official encryption primitives.
+- Preserve public metadata, save generated private keys separately, and decrypt in memory without evaluating shell substitutions.
+- Encrypt edits and routes to encrypted destinations; require explicit plaintext export consent.
+- Add recipient public-key encryption and public metadata inspection.
+- Add `envranger/loader` with explicit frontend/backend projections and two root opt-ins.
+- Replace the uploaded loader's global process cache and process termination with frozen results and caller-controlled errors.
+- Include the fixed root loader, original backend requirement list, example access/routing config, and sharing guidance.
+
 ## 0.2.0 — 2026-09-21
 
 Rebuild the original experimental CLI into a documented local environment workflow.
